@@ -1,5 +1,5 @@
 import { Texture, utils, Ticker } from '@pixi/core';
-import { Container } from '@pixi/display';
+import { Container, IDestroyOptions } from '@pixi/display';
 import { Graphics } from '@pixi/graphics';
 import { Sprite } from '@pixi/sprite';
 import { TextStyle, Text } from '@pixi/text';
@@ -15,6 +15,7 @@ export type InputOptions = {
     maxLength?: number;
     align?: 'left' | 'center' | 'right';
     padding?: Padding;
+    cleanOnFocus?: boolean;
 };
 
 /**
@@ -43,7 +44,11 @@ export class Input extends Container
 
     protected activation = false;
     protected readonly options: InputOptions;
-    protected _keyboard: HTMLInputElement;
+    protected input: HTMLInputElement;
+
+    protected handleActivationBinding = this.handleActivation.bind(this);
+    protected onKeyUpBinding = this.onKeyUp.bind(this);
+    protected stopEditingBinding = this.stopEditing.bind(this);
 
     /** Fires when input loses focus. */
     onEnter: Signal<(text: string) => void>;
@@ -81,26 +86,13 @@ export class Input extends Container
 
         if (utils.isMobile.any)
         {
-            window.addEventListener('touchstart', () => this.handleActivation());
+            window.addEventListener('touchstart', this.handleActivationBinding);
         }
         else if (!utils.isMobile.any)
         {
-            window.addEventListener('click', () => this.handleActivation());
+            window.addEventListener('click', this.handleActivationBinding);
 
-            window.addEventListener('keydown', (e) =>
-            {
-                const key = e.key;
-
-                if (key === 'Backspace')
-                {
-                    this._delete();
-                }
-                else if (key === 'Escape' || key === 'Enter')
-                {
-                    this.stopEditing();
-                }
-                else if (key.length === 1) this._add(key);
-            });
+            window.addEventListener('keyup', this.onKeyUpBinding);
         }
 
         this.onEnter = new Signal();
@@ -116,6 +108,21 @@ export class Input extends Container
         {
             console.error('Input: bg is not defined, please define it.');
         }
+    }
+
+    protected onKeyUp(e: KeyboardEvent)
+    {
+        const key = e.key;
+
+        if (key === 'Backspace')
+        {
+            this._delete();
+        }
+        else if (key === 'Escape' || key === 'Enter')
+        {
+            this.stopEditing();
+        }
+        else if (key.length === 1) this._add(key);
     }
 
     protected init()
@@ -152,18 +159,29 @@ export class Input extends Container
 
     set bg(bg: Container | string)
     {
+        if (this._bg)
+        {
+            this.removeChild(this._bg);
+            this._bg.destroy();
+        }
+
         this._bg = getView(bg);
         this._bg.cursor = 'text';
         this._bg.interactive = true;
 
-        if (!this._bg.parent)
-        {
-            this.addChild(this._bg);
-        }
+        this.addChildAt(this._bg, 0);
 
         if (!this.inputField)
         {
             this.init();
+        }
+
+        if (this.inputMask)
+        {
+            this.inputField.mask = null;
+            this._cursor.mask = null;
+            this.removeChild(this.inputMask);
+            this.inputMask.destroy();
         }
 
         this.inputMask = new Graphics()
@@ -179,10 +197,7 @@ export class Input extends Container
 
         this._cursor.mask = this.inputMask;
 
-        if (!this.inputMask.parent)
-        {
-            this.addChild(this.inputMask);
-        }
+        this.addChildAt(this.inputMask, 0);
     }
 
     get bg(): Container | string
@@ -220,6 +235,11 @@ export class Input extends Container
 
     protected _startEditing(): void
     {
+        if (this.options.cleanOnFocus)
+        {
+            this.value = '';
+        }
+
         this.tick = 0;
         this.editing = true;
         this.placeholder.visible = false;
@@ -227,33 +247,59 @@ export class Input extends Container
 
         if (utils.isMobile.any)
         {
-            this._keyboard = document.createElement('input');
-
-            document.body.appendChild(this._keyboard);
-            this._keyboard.style.position = 'fixed';
-            this._keyboard.style.left = '-1000px';
-
-            this._keyboard.oninput = () =>
-            {
-                let value = this._keyboard.value;
-
-                const maxLength = this.options.maxLength;
-
-                if (maxLength && value.length > this.options.maxLength)
-                {
-                    value = value.substring(0, maxLength);
-                    this._keyboard.value = value;
-                }
-
-                this.value = value;
-
-                this.onChange.emit(this.value);
-            };
-
-            this._keyboard.focus();
-            this._keyboard.click();
-            this._keyboard.value = this.value;
+            this.createInputField();
         }
+
+        this.align();
+    }
+
+    protected createInputField()
+    {
+        if (this.input)
+        {
+            this.input.removeEventListener('blur', this.stopEditingBinding);
+            this.input.removeEventListener('keyup', this.onKeyUpBinding);
+
+            this.input?.blur();
+            this.input?.remove();
+            this.input = null;
+        }
+
+        const input: HTMLInputElement = document.createElement('input');
+
+        document.body.appendChild(input);
+
+        input.setAttribute('inputmode', 'decimal');
+
+        input.style.position = 'fixed';
+        input.style.left = `${this.getGlobalPosition().x}px`;
+        input.style.top = `${this.getGlobalPosition().y}px`;
+        input.style.opacity = '0.0000001';
+        input.style.width = `${this._bg.width}px`;
+        input.style.height = `${this._bg.height}px`;
+        input.style.border = 'none';
+        input.style.outline = 'none';
+        input.style.background = 'white';
+
+        // This hack fixes instant hiding keyboard on mobile after showing it
+        if (utils.isMobile.android.device)
+        {
+            setTimeout(() =>
+            {
+                input.focus();
+                input.click();
+            }, 100);
+        }
+        else
+        {
+            input.focus();
+            input.click();
+        }
+
+        input.addEventListener('blur', this.stopEditingBinding);
+        input.addEventListener('keyup', this.onKeyUpBinding);
+
+        this.input = input;
 
         this.align();
     }
@@ -286,9 +332,9 @@ export class Input extends Container
 
         if (utils.isMobile.any)
         {
-            this._keyboard?.blur();
-            this._keyboard?.remove();
-            this._keyboard = null;
+            this.input?.blur();
+            this.input?.remove();
+            this.input = null;
         }
 
         this.align();
@@ -426,5 +472,23 @@ export class Input extends Container
     get padding(): [number, number, number, number]
     {
         return [this.paddingTop, this.paddingRight, this.paddingBottom, this.paddingLeft];
+    }
+
+    override destroy(options?: IDestroyOptions | boolean)
+    {
+        this.off('pointertap');
+
+        if (utils.isMobile.any)
+        {
+            window.removeEventListener('touchstart', this.handleActivationBinding);
+        }
+        else if (!utils.isMobile.any)
+        {
+            window.removeEventListener('click', this.handleActivationBinding);
+
+            window.removeEventListener('keyup', this.onKeyUpBinding);
+        }
+
+        super.destroy(options);
     }
 }
