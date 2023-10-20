@@ -1,48 +1,56 @@
-import { Button } from '../Button';
-import { Container } from '@pixi/display';
 import { Text } from '@pixi/text';
 import { Graphics } from '@pixi/graphics';
 import { App } from './components/App';
+import { ScrollBox } from '../ScrollBox';
+import { defaultTextStyle } from '../utils/helpers/styles';
+import { FancyButton } from '../FancyButton';
 
 // eslint-disable-next-line no-new
 new class Application extends App
 {
     init()
     {
-        this.createElements();
-    }
+        const elementsWidth = 260;
+        const elementsHeight = 40;
+        const radius = 10;
 
-    private createElements()
-    {
-        const button = this.createButton();
+        const items = [];
 
-        button.onPress.connect(() => console.log('onPress'));
-    }
+        for (let i = 0; i < 50; i++)
+        {
+            const button = new FancyButton({
+                defaultView: new Graphics().beginFill(0xa5e24d).drawRoundedRect(0, 0, elementsWidth, elementsHeight, radius),
+                hoverView: new Graphics().beginFill(0xfec230).drawRoundedRect(0, 0, elementsWidth, elementsHeight, radius),
+                pressedView: new Graphics().beginFill(0xfe6048).drawRoundedRect(0, 0, elementsWidth, elementsHeight, radius),
+                text: new Text(`Item ${i + 1}`, {
+                    ...defaultTextStyle,
+                    fill: 'white'
+                })
+            });
 
-    private createButton(): Button
-    {
-        const text = new Text('Pixi 8');
+            button.anchor.set(0);
+            button.onPress.connect(() => console.log('onPress'));
 
-        text.anchor.set(0.5);
-        text.style = {
-            fontSize: 100,
-            fill: 0xffffff
-        };
+            items.push(button);
+        }
 
-        const graphics = new Graphics()
-            .beginFill(0xde3249)
-            .drawRoundedRect(0, 0, text.width + 100, text.height + 20, 25);
+        // Component usage !!!
+        const scrollBox = new ScrollBox({
+            background: 'gray',
+            elementsMargin: 10,
+            width: 300,
+            height: 600,
+            radius: 20,
+            padding: 20,
+            disableEasing: true
+        });
 
-        graphics.x = -graphics.width / 2;
-        graphics.y = -graphics.height / 2;
+        scrollBox.addItems(items);
 
-        const buttonContainer = new Container();
+        scrollBox.x = -scrollBox.width / 2;
+        scrollBox.y = -scrollBox.height / 2;
 
-        buttonContainer.addChild(graphics, text);
-
-        this.view.addChild(buttonContainer);
-
-        return new Button(this.view);
+        this.view.addChild(scrollBox);
     }
 }();
 
