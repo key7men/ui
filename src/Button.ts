@@ -38,6 +38,8 @@ export class Button extends ButtonEvents
             this.view = view;
             this.enabled = true;
         }
+
+        this.onDown.connect(() => console.log('onDown'));
     }
 
     /** Set button view, that all the interaction events are applied to. */
